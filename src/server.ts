@@ -43,6 +43,55 @@ type ToolContent =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string };
 
+const storedToolNameSchema = z.enum([
+  "open_workspace",
+  "read_file",
+  "write_file",
+  "edit_file",
+  "grep_files",
+  "find_files",
+  "list_directory",
+  "run_shell",
+]);
+const summarySchema = z.record(z.string(), z.unknown());
+const uiCardSchema = z.object({
+  card: z.string(),
+  expandable: z.boolean(),
+});
+const toolPayloadSchema = z.object({
+  content: z
+    .array(
+      z.union([
+        z.object({ type: z.literal("text"), text: z.string() }),
+        z.object({
+          type: z.literal("image"),
+          data: z.string(),
+          mimeType: z.string(),
+        }),
+      ]),
+    )
+    .optional(),
+  diff: z.string().optional(),
+  patch: z.string().optional(),
+});
+
+function cardOutputSchema<TTool extends string>(
+  tool: TTool,
+  summary: z.ZodType,
+  extra: z.ZodRawShape = {},
+): z.ZodRawShape {
+  return {
+    tool: z.literal(tool),
+    resultId: z.string(),
+    workspaceId: z.string(),
+    path: z.string().optional(),
+    label: z.string(),
+    summary,
+    ui: uiCardSchema,
+    ...extra,
+  };
+}
+
 function isAuthorized(req: Request, config: ServerConfig): boolean {
   if (!config.authToken) return true;
 
@@ -226,6 +275,16 @@ function createMcpServer(
           .describe("Workspace identifier returned by open_workspace."),
         resultId: z.string().describe("Result identifier returned by a tool."),
       },
+      outputSchema: {
+        tool: z.literal("get_tool_result_payload"),
+        resultId: z.string(),
+        workspaceId: z.string().optional(),
+        sourceTool: storedToolNameSchema,
+        label: z.string().optional(),
+        path: z.string().optional(),
+        summary: summarySchema,
+        payload: toolPayloadSchema,
+      },
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
@@ -272,6 +331,17 @@ function createMcpServer(
           .describe(
             "Absolute path to a local project directory inside an allowed root.",
           ),
+      },
+      outputSchema: {
+        tool: z.literal("open_workspace"),
+        resultId: z.string(),
+        workspaceId: z.string(),
+        root: z.string(),
+        label: z.string(),
+        summary: z.object({
+          agentsFiles: z.number().int().nonnegative(),
+        }),
+        ui: uiCardSchema,
       },
       _meta: {
         ui: {
@@ -372,6 +442,15 @@ function createMcpServer(
           .optional()
           .describe("Maximum number of lines to read."),
       },
+      outputSchema: cardOutputSchema(
+        "read_file",
+        z.object({
+          lines: z.number().int().nonnegative(),
+          characters: z.number().int().nonnegative(),
+          offset: z.number().int().positive(),
+          limited: z.boolean(),
+        }),
+      ),
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
@@ -442,6 +521,13 @@ function createMcpServer(
           .describe("File path to write, relative to the workspace root."),
         content: z.string().describe("Complete new file content."),
       },
+      outputSchema: cardOutputSchema(
+        "write_file",
+        z.object({
+          lines: z.number().int().nonnegative(),
+          characters: z.number().int().nonnegative(),
+        }),
+      ),
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
@@ -525,6 +611,17 @@ function createMcpServer(
           )
           .min(1),
       },
+      outputSchema: cardOutputSchema(
+        "edit_file",
+        z.object({
+          additions: z.number().int().nonnegative(),
+          removals: z.number().int().nonnegative(),
+          editCount: z.number().int().positive(),
+        }),
+        {
+          status: z.literal("applied"),
+        },
+      ),
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
@@ -610,6 +707,15 @@ function createMcpServer(
           ),
         include: z.string().optional().describe("Optional include glob."),
       },
+      outputSchema: cardOutputSchema(
+        "grep_files",
+        z.object({
+          pattern: z.string(),
+          scope: z.string(),
+          lines: z.number().int().nonnegative(),
+          characters: z.number().int().nonnegative(),
+        }),
+      ),
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
@@ -683,6 +789,15 @@ function createMcpServer(
           .optional()
           .describe("Optional path scope relative to the workspace root."),
       },
+      outputSchema: cardOutputSchema(
+        "find_files",
+        z.object({
+          pattern: z.string(),
+          scope: z.string(),
+          lines: z.number().int().nonnegative(),
+          characters: z.number().int().nonnegative(),
+        }),
+      ),
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
@@ -754,6 +869,13 @@ function createMcpServer(
           .string()
           .describe("Directory path to list, relative to the workspace root."),
       },
+      outputSchema: cardOutputSchema(
+        "list_directory",
+        z.object({
+          lines: z.number().int().nonnegative(),
+          characters: z.number().int().nonnegative(),
+        }),
+      ),
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
@@ -829,6 +951,15 @@ function createMcpServer(
           .optional()
           .describe("Timeout in seconds. Defaults to 30, max 300."),
       },
+      outputSchema: cardOutputSchema(
+        "run_shell",
+        z.object({
+          command: z.string(),
+          workingDirectory: z.string(),
+          lines: z.number().int().nonnegative(),
+          characters: z.number().int().nonnegative(),
+        }),
+      ),
       _meta: {
         ui: {
           resourceUri: WORKSPACE_APP_URI,
