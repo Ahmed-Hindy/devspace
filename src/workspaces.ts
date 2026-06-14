@@ -136,12 +136,10 @@ function directoriesBetween(root: string, directory: string): string[] {
 }
 
 export function formatAgentsNotice(agentsFiles: LoadedAgentsFile[]): string | undefined {
-  if (agentsFiles.length === 0) return undefined;
+  const newAgentsFiles = agentsFiles.filter((file) => !file.alreadyLoaded);
+  if (newAgentsFiles.length === 0) return undefined;
 
-  const sections = agentsFiles.map((file) => {
-    const status = file.alreadyLoaded ? "already loaded" : "newly loaded";
-    return `## ${file.path} (${status})\n\n${file.content}`;
-  });
+  const sections = newAgentsFiles.map((file) => `## ${file.path} (newly loaded)\n\n${file.content}`);
 
   return `AGENTS.md context for this workspace path:\n\n${sections.join("\n\n")}`;
 }
